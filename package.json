@@ -1,0 +1,9 @@
+{
+  "name": "biamassx_files",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "ISC",
+  "scripts": {
+    "build": "echo Building project..."
+  }
+}
