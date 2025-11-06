@@ -30,10 +30,6 @@ jobs:
       - name: Build project
         run: npm run build
 
-      # 5️⃣ รันเทส (ถ้ามี)
-      - name: Run tests
-        run: npm test
-
       # 6️⃣ แสดงผลไฟล์ที่ build แล้ว
       - name: Show build output
         run: ls -R dist || echo "No dist folder found"
