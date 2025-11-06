@@ -1,0 +1,236 @@
+// CSRF Token Management Utility
+// Handles fetching, caching, and including CSRF tokens in AJAX requests
+
+class CSRFManager {
+    constructor() {
+        this.token = null;
+        this.tokenExpiry = null;
+        this.tokenPromise = null;
+        this.apiBase = '/api';
+    }
+
+    /**
+     * Get the current CSRF token, fetching it if necessary
+     * @returns {Promise<string>} The CSRF token
+     */
+    async getToken() {
+        // If we have a valid token, return it
+        if (this.token && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+            return this.token;
+        }
+
+        // If we're already fetching a token, wait for it
+        if (this.tokenPromise) {
+            return this.tokenPromise;
+        }
+
+        // Fetch a new token
+        this.tokenPromise = this.fetchToken();
+
+        try {
+            const result = await this.tokenPromise;
+            this.tokenPromise = null;
+            return result;
+        } catch (error) {
+            this.tokenPromise = null;
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch a new CSRF token from the server
+     * @returns {Promise<string>} The CSRF token
+     */
+    async fetchToken() {
+        try {
+            // Get the auth token from localStorage
+            const authToken = localStorage.getItem('authToken');
+            console.log('🔄 Fetching CSRF token, auth token present:', !!authToken);
+
+            const headers = {
+                'Accept': 'application/json',
+            };
+
+            // Include Authorization header if auth token exists
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            const response = await fetch(`${this.apiBase}/csrf-token`, {
+                method: 'GET',
+                credentials: 'include', // Include cookies
+                headers: headers
+            });
+
+            console.log('🔄 CSRF token response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ CSRF token error response:', errorText);
+                throw new Error(`Failed to fetch CSRF token: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.csrf_token) {
+                throw new Error('Invalid CSRF token response');
+            }
+
+            // Store the token and calculate expiry (default 1 hour from server)
+            this.token = data.csrf_token;
+            this.tokenExpiry = Date.now() + (data.expires_at ? (data.expires_at * 1000 - Date.now()) : 3600000);
+
+            console.log('🔑 CSRF token fetched and cached');
+            return this.token;
+
+        } catch (error) {
+            console.error('❌ Failed to fetch CSRF token:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Clear the cached token (useful for logout or token refresh)
+     */
+    clearToken() {
+        this.token = null;
+        this.tokenExpiry = null;
+        this.tokenPromise = null;
+        console.log('🗑️ CSRF token cleared');
+    }
+
+    /**
+     * Make an authenticated request with CSRF token
+     * @param {string} url - The URL to request
+     * @param {object} options - Fetch options
+     * @returns {Promise<Response>} The fetch response
+     */
+    async authenticatedFetch(url, options = {}) {
+        // Get the CSRF token
+        const csrfToken = await this.getToken();
+
+        // Get the auth token from localStorage
+        const authToken = localStorage.getItem('authToken');
+
+        // Set default options
+        const defaultOptions = {
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+                ...options.headers
+            }
+        };
+
+        // Add Authorization header if auth token exists
+        if (authToken) {
+            defaultOptions.headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        // For non-GET requests, ensure CSRF token is included
+        if (options.method && options.method !== 'GET') {
+            defaultOptions.headers['X-CSRF-Token'] = csrfToken;
+        }
+
+        // Merge options
+        const finalOptions = { ...defaultOptions, ...options };
+        if (options.headers) {
+            finalOptions.headers = { ...defaultOptions.headers, ...options.headers };
+        }
+
+        try {
+            const response = await fetch(url, finalOptions);
+
+            // If we get a 403 Forbidden, it might be due to an expired CSRF token
+            if (response.status === 403) {
+                const responseText = await response.clone().text();
+                if (responseText.includes('CSRF') || responseText.includes('csrf')) {
+                    console.warn('⚠️ CSRF token rejected, clearing cache and retrying...');
+                    this.clearToken();
+
+                    // Retry once with a fresh token
+                    const freshToken = await this.getToken();
+                    finalOptions.headers['X-CSRF-Token'] = freshToken;
+
+                    return fetch(url, finalOptions);
+                }
+            }
+
+            return response;
+
+        } catch (error) {
+            // If it's a network error and we have a cached token, it might be expired
+            if (error.name === 'TypeError' && this.token) {
+                console.warn('⚠️ Network error with cached token, clearing cache...');
+                this.clearToken();
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Make a POST request with CSRF token
+     * @param {string} url - The URL to request
+     * @param {object} data - The data to send
+     * @param {object} options - Additional fetch options
+     * @returns {Promise<Response>} The fetch response
+     */
+    async post(url, data, options = {}) {
+        return this.authenticatedFetch(url, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            ...options
+        });
+    }
+
+    /**
+     * Make a PUT request with CSRF token
+     * @param {string} url - The URL to request
+     * @param {object} data - The data to send
+     * @param {object} options - Additional fetch options
+     * @returns {Promise<Response>} The fetch response
+     */
+    async put(url, data, options = {}) {
+        return this.authenticatedFetch(url, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+            ...options
+        });
+    }
+
+    /**
+     * Make a DELETE request with CSRF token
+     * @param {string} url - The URL to request
+     * @param {object} options - Additional fetch options
+     * @returns {Promise<Response>} The fetch response
+     */
+    async delete(url, options = {}) {
+        return this.authenticatedFetch(url, {
+            method: 'DELETE',
+            ...options
+        });
+    }
+
+    /**
+     * Make a PATCH request with CSRF token
+     * @param {string} url - The URL to request
+     * @param {object} data - The data to send
+     * @param {object} options - Additional fetch options
+     * @returns {Promise<Response>} The fetch response
+     */
+    async patch(url, data, options = {}) {
+        return this.authenticatedFetch(url, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+            ...options
+        });
+    }
+}
+
+// Create a global CSRF manager instance
+window.csrfManager = new CSRFManager();
+
+// Export for ES modules if needed
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = CSRFManager;
+}

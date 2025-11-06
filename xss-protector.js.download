@@ -1,0 +1,132 @@
+// XSS protection utility for BiomassX
+class XSSProtector {
+    constructor() {
+        // HTML entities mapping for sanitization
+        this.entityMap = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#x27;',
+            '/': '&#x2F;',
+            '`': '&#x60;',
+            '=': '&#x3D;'
+        };
+    }
+
+    /**
+     * Sanitize text content for safe display
+     * @param {string} text - The text to sanitize
+     * @returns {string} - Sanitized text safe for textContent
+     */
+    sanitizeText(text) {
+        if (text == null || text === undefined) {
+            return '';
+        }
+
+        // Convert to string and escape HTML entities
+        return String(text)
+            .replace(/[&<>"'`=\/]/g, (char) => this.entityMap[char]);
+    }
+
+    /**
+     * Sanitize HTML content (only allow safe tags)
+     * @param {string} html - The HTML to sanitize
+     * @param {string[]} allowedTags - Array of allowed tag names (default: none)
+     * @returns {string} - Sanitized HTML
+     */
+    sanitizeHTML(html, allowedTags = []) {
+        if (html == null || html === undefined) {
+            return '';
+        }
+
+        let text = String(html);
+
+        // If no tags are allowed, just escape everything
+        if (allowedTags.length === 0) {
+            return this.sanitizeText(text);
+        }
+
+        // Basic HTML sanitization - remove dangerous tags and attributes
+        // This is a simple implementation - for production, consider using a proper HTML sanitizer
+        text = text.replace(/<script[^>]*>.*?<\/script>/gi, '');
+        text = text.replace(/<style[^>]*>.*?<\/style>/gi, '');
+        text = text.replace(/<iframe[^>]*>.*?<\/iframe>/gi, '');
+        text = text.replace(/<object[^>]*>.*?<\/object>/gi, '');
+        text = text.replace(/<embed[^>]*>.*?<\/embed>/gi, '');
+        text = text.replace(/<form[^>]*>.*?<\/form>/gi, '');
+        text = text.replace(/<input[^>]*>/gi, '');
+        text = text.replace(/<button[^>]*>.*?<\/button>/gi, '');
+
+        // Remove dangerous attributes
+        text = text.replace(/on\w+="[^"]*"/gi, '');
+        text = text.replace(/on\w+='[^']*'/gi, '');
+        text = text.replace(/javascript:[^"']*/gi, '');
+
+        return text;
+    }
+
+    /**
+     * Safely set text content to an element
+     * @param {HTMLElement} element - The DOM element
+     * @param {string} text - The text to set
+     */
+    setTextContent(element, text) {
+        if (element) {
+            element.textContent = this.sanitizeText(text);
+        }
+    }
+
+    /**
+     * Safely set HTML content to an element
+     * @param {HTMLElement} element - The DOM element
+     * @param {string} html - The HTML to set
+     * @param {string[]} allowedTags - Array of allowed tag names
+     */
+    setHTMLContent(element, html, allowedTags = []) {
+        if (element) {
+            element.innerHTML = this.sanitizeHTML(html, allowedTags);
+        }
+    }
+
+    /**
+     * Validate and sanitize user input for forms
+     * @param {string} input - The user input
+     * @param {Object} options - Validation options
+     * @returns {Object} - {isValid: boolean, sanitized: string, error: string}
+     */
+    validateInput(input, options = {}) {
+        const {
+            maxLength = 1000,
+            minLength = 0,
+            pattern = null,
+            required = false
+        } = options;
+
+        let sanitized = this.sanitizeText(input || '').trim();
+
+        // Check required
+        if (required && !sanitized) {
+            return { isValid: false, sanitized: '', error: 'This field is required' };
+        }
+
+        // Check length
+        if (sanitized.length < minLength) {
+            return { isValid: false, sanitized, error: `Minimum length is ${minLength} characters` };
+        }
+
+        if (sanitized.length > maxLength) {
+            return { isValid: false, sanitized: sanitized.substring(0, maxLength), error: `Maximum length is ${maxLength} characters` };
+        }
+
+        // Check pattern
+        if (pattern && !pattern.test(sanitized)) {
+            return { isValid: false, sanitized, error: 'Invalid format' };
+        }
+
+        return { isValid: true, sanitized, error: null };
+    }
+}
+
+// Global instance
+window.xssProtector = new XSSProtector();

@@ -1,0 +1,355 @@
+/**
+ * BiomassX Internationalization (i18n) Library
+ * Lightweight i18n system for multilingual support
+ */
+class BiomassI18n {
+    constructor() {
+        this.currentLanguage = 'en';
+        this.translations = {};
+        this.fallbackLanguage = 'en';
+        this.supportedLanguages = ['en', 'th', 'kr', 'jp', 'vi', 'pt', 'es', 'id', 'de', 'hi', 'fr', 'ru', 'zh-cn'];
+        this.initialized = false;
+        
+        // Initialize the i18n system
+        this.init();
+    }
+
+    /**
+     * Initialize the i18n system
+     */
+    async init() {
+        if (this.initialized) {
+            console.log('BiomassI18n already initialized');
+            return;
+        }
+        
+        console.log('Starting BiomassI18n initialization...');
+        
+        // Load saved language preference or detect browser language
+        const savedLanguage = localStorage.getItem('biomassx-language');
+        const browserLanguage = this.detectBrowserLanguage();
+        
+        this.currentLanguage = savedLanguage || browserLanguage || 'en';
+        console.log(`Using language: ${this.currentLanguage} (saved: ${savedLanguage}, browser: ${browserLanguage})`);
+        
+        // Load translation files
+        await this.loadTranslations();
+        
+        // Apply translations to the page
+        this.applyTranslations();
+        
+        // Update language selector
+        this.updateLanguageSelector();
+        
+        this.initialized = true;
+        console.log(`BiomassX i18n initialized with language: ${this.currentLanguage}`);
+    }
+
+    /**
+     * Detect browser language and map to supported languages
+     */
+    detectBrowserLanguage() {
+        const browserLang = navigator.language || navigator.userLanguage;
+        const langCode = browserLang.split('-')[0].toLowerCase();
+        
+        // Map browser language codes to our supported languages
+        const languageMap = {
+            'en': 'en',
+            'th': 'th',
+            'ko': 'kr',  // Korean browser code 'ko' maps to our 'kr'
+            'kr': 'kr',
+            'ja': 'jp',  // Japanese browser code 'ja' maps to our 'jp'
+            'jp': 'jp',
+            'vi': 'vi',
+            'vn': 'vi',   // Alternative Vietnamese code
+            'pt': 'pt',   // Portuguese
+            'es': 'es',   // Spanish
+            'id': 'id',   // Indonesian
+            'de': 'de',   // German
+            'hi': 'hi',   // Hindi
+            'fr': 'fr',   // French
+            'ru': 'ru',   // Russian
+            'zh': 'zh-cn', // Chinese browser code 'zh' maps to our 'zh-cn'
+            'zh-cn': 'zh-cn'
+        };
+        
+        return languageMap[langCode] || 'en';
+    }
+
+    /**
+     * Load translation files for current language and fallback
+     */
+    async loadTranslations() {
+        try {
+            console.log(`Loading translations for language: ${this.currentLanguage}`);
+
+            // Load current language
+            const response = await fetch(`/i18n/${this.currentLanguage}.json`);
+            if (response.ok) {
+                this.translations[this.currentLanguage] = await response.json();
+                console.log(`Successfully loaded translations for ${this.currentLanguage}`);
+            } else {
+                console.warn(`Failed to load translations for ${this.currentLanguage} (${response.status})`);
+            }
+
+            // Load fallback language if different from current
+            if (this.currentLanguage !== this.fallbackLanguage) {
+                console.log(`Loading fallback translations for: ${this.fallbackLanguage}`);
+                const fallbackResponse = await fetch(`/i18n/${this.fallbackLanguage}.json`);
+                if (fallbackResponse.ok) {
+                    this.translations[this.fallbackLanguage] = await fallbackResponse.json();
+                    console.log(`Successfully loaded fallback translations for ${this.fallbackLanguage}`);
+                } else {
+                    console.warn(`Failed to load fallback translations for ${this.fallbackLanguage} (${fallbackResponse.status})`);
+                }
+            }
+
+            // Load page-specific translations (e.g., Terms of Service)
+            await this.loadPageSpecificTranslations();
+
+            console.log('Available translations:', Object.keys(this.translations));
+        } catch (error) {
+            console.error('Error loading translations:', error);
+        }
+    }
+
+    /**
+     * Load page-specific translation files
+     */
+    async loadPageSpecificTranslations() {
+        // Detect if we're on the Terms of Service page
+        if (window.location.pathname.includes('terms-of-service')) {
+            try {
+                const tosResponse = await fetch(`/i18n/tos-${this.currentLanguage}.json`);
+                if (tosResponse.ok) {
+                    const tosTranslations = await tosResponse.json();
+                    // Merge TOS translations into main translations
+                    this.translations[this.currentLanguage] = {
+                        ...this.translations[this.currentLanguage],
+                        ...tosTranslations
+                    };
+                    console.log(`Successfully loaded TOS translations for ${this.currentLanguage}`);
+                }
+            } catch (error) {
+                console.warn('Could not load TOS-specific translations:', error);
+            }
+        }
+        // Add more page-specific translations as needed
+    }
+
+    /**
+     * Get translation for a key
+     */
+    t(key, defaultValue = '') {
+        const keys = key.split('.');
+        let translation = this.translations[this.currentLanguage];
+        
+        // Debug logging for first few calls
+        if (Math.random() < 0.1) { // Log 10% of calls to avoid spam
+            console.log(`Translating key: ${key}, current lang: ${this.currentLanguage}`);
+            console.log(`Available translations:`, Object.keys(this.translations));
+        }
+        
+        // Navigate through nested keys
+        for (const k of keys) {
+            if (translation && typeof translation === 'object' && k in translation) {
+                translation = translation[k];
+            } else {
+                translation = null;
+                break;
+            }
+        }
+        
+        // If no translation found, try fallback language
+        if (!translation && this.currentLanguage !== this.fallbackLanguage) {
+            let fallbackTranslation = this.translations[this.fallbackLanguage];
+            for (const k of keys) {
+                if (fallbackTranslation && typeof fallbackTranslation === 'object' && k in fallbackTranslation) {
+                    fallbackTranslation = fallbackTranslation[k];
+                } else {
+                    fallbackTranslation = null;
+                    break;
+                }
+            }
+            translation = fallbackTranslation;
+        }
+        
+        return translation || defaultValue || key;
+    }
+
+    /**
+     * Change language
+     */
+    async changeLanguage(newLanguage) {
+        if (!this.supportedLanguages.includes(newLanguage)) {
+            console.warn(`Unsupported language: ${newLanguage}`);
+            return;
+        }
+        
+        this.currentLanguage = newLanguage;
+        localStorage.setItem('biomassx-language', newLanguage);
+        
+        // Load translations for new language
+        await this.loadTranslations();
+        
+        // Apply new translations
+        this.applyTranslations();
+        
+        // Update language selector
+        this.updateLanguageSelector();
+        
+        console.log(`Language changed to: ${newLanguage}`);
+    }
+
+    /**
+     * Apply translations to all elements with data-i18n attribute
+     */
+    applyTranslations() {
+        const elements = document.querySelectorAll('[data-i18n]');
+        console.log(`Found ${elements.length} elements with data-i18n attribute`);
+        
+        let translatedCount = 0;
+        elements.forEach(element => {
+            const fullKey = element.getAttribute('data-i18n');
+            
+            // Parse attribute syntax like [title]profile.edit_address
+            let attribute = null;
+            let key = fullKey;
+            
+            const bracketMatch = fullKey.match(/^\[(\w+)\](.+)$/);
+            if (bracketMatch) {
+                attribute = bracketMatch[1]; // e.g., "title"
+                key = bracketMatch[2]; // e.g., "profile.edit_address"
+            }
+            
+            let translation = this.t(key);
+
+            if (translation && translation !== key) {
+                translatedCount++;
+
+                // Replace {year} placeholder with current year
+                if (typeof translation === 'string' && translation.includes('{year}')) {
+                    translation = translation.replace('{year}', new Date().getFullYear());
+                }
+
+                // Set the appropriate attribute based on the parsed syntax
+                if (attribute === 'title') {
+                    element.title = translation;
+                } else if (attribute === 'placeholder') {
+                    element.placeholder = translation;
+                } else if (attribute === 'alt') {
+                    element.alt = translation;
+                } else {
+                    // Default behavior for text content
+                    if (element.tagName === 'INPUT') {
+                        if (element.type === 'submit' || element.type === 'button') {
+                            element.value = translation;
+                        } else {
+                            element.placeholder = translation;
+                        }
+                    } else if (element.tagName === 'IMG') {
+                        element.alt = translation;
+                    } else if (element.hasAttribute('title')) {
+                        element.title = translation;
+                    } else {
+                        element.textContent = translation;
+                    }
+                }
+            } else {
+                console.warn(`No translation found for key: ${fullKey}`);
+            }
+        });
+        
+        console.log(`Applied ${translatedCount} translations out of ${elements.length} elements`);
+        
+        // Handle special attributes
+        const attributeElements = document.querySelectorAll('[data-i18n-placeholder]');
+        attributeElements.forEach(element => {
+            const key = element.getAttribute('data-i18n-placeholder');
+            element.placeholder = this.t(key);
+        });
+        
+        const titleElements = document.querySelectorAll('[data-i18n-title]');
+        titleElements.forEach(element => {
+            const key = element.getAttribute('data-i18n-title');
+            element.title = this.t(key);
+        });
+    }
+
+    /**
+     * Update language selector to reflect current language
+     */
+    updateLanguageSelector() {
+        const selectors = document.querySelectorAll('.language-selector select');
+        selectors.forEach(select => {
+            select.value = this.currentLanguage;
+        });
+    }
+
+    /**
+     * Get current language
+     */
+    getCurrentLanguage() {
+        return this.currentLanguage;
+    }
+
+    /**
+     * Get supported languages
+     */
+    getSupportedLanguages() {
+        return this.supportedLanguages;
+    }
+
+    /**
+     * Format numbers according to current locale
+     */
+    formatNumber(number, options = {}) {
+        const localeMap = {
+            'en': 'en-US',
+            'th': 'th-TH',
+            'kr': 'ko-KR',
+            'jp': 'ja-JP',
+            'vi': 'vi-VN',
+            'pt': 'pt-BR',
+            'es': 'es-ES',
+            'id': 'id-ID',
+            'de': 'de-DE',
+            'hi': 'hi-IN',
+            'fr': 'fr-FR',
+            'ru': 'ru-RU',
+            'zh-cn': 'zh-CN'
+        };
+        
+        const locale = localeMap[this.currentLanguage] || 'en-US';
+        return new Intl.NumberFormat(locale, options).format(number);
+    }
+
+    /**
+     * Format currency according to current locale
+     */
+    formatCurrency(amount, currency = 'USD') {
+        return this.formatNumber(amount, {
+            style: 'currency',
+            currency: currency
+        });
+    }
+}
+
+// Global i18n instance
+let i18n;
+
+// Initialize i18n when DOM is loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        i18n = new BiomassI18n();
+        window.biomassI18n = i18n; // Make it globally accessible
+    });
+} else {
+    i18n = new BiomassI18n();
+    window.biomassI18n = i18n;
+}
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = BiomassI18n;
+}
