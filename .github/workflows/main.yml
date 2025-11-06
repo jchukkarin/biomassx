@@ -1,0 +1,39 @@
+name: Biomassx
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout โค้ดจาก repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ ติดตั้ง Node.js (ระบุเวอร์ชันได้)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 3️⃣ ติดตั้ง dependencies
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # 4️⃣ สร้างโปรเจกต์ (build)
+      - name: Build project
+        run: npm run build
+
+      # 5️⃣ รันเทส (ถ้ามี)
+      - name: Run tests
+        run: npm test
+
+      # 6️⃣ แสดงผลไฟล์ที่ build แล้ว
+      - name: Show build output
+        run: ls -R dist || echo "No dist folder found"
