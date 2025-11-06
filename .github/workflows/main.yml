@@ -15,6 +15,8 @@ jobs:
       # 1️⃣ Checkout โค้ดจาก repo
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: false
 
       # 2️⃣ ติดตั้ง Node.js (ระบุเวอร์ชันได้)
       - name: Setup Node.js
